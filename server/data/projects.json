@@ -1,0 +1,14 @@
+[
+  {
+    "title": "Sample Project",
+    "description": "One or two lines on what it does and why you built it.",
+    "tech": [
+      "React",
+      "Node.js"
+    ],
+    "live": "",
+    "github": "",
+    "image": "",
+    "details": "Explain the problem, your solution and the key features."
+  }
+]

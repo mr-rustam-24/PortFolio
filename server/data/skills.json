@@ -1,0 +1,27 @@
+[
+  {
+    "name": "React",
+    "category": "Frontend",
+    "level": 85
+  },
+  {
+    "name": "JavaScript",
+    "category": "Frontend",
+    "level": 90
+  },
+  {
+    "name": "Node.js",
+    "category": "Backend",
+    "level": 80
+  },
+  {
+    "name": "Express",
+    "category": "Backend",
+    "level": 80
+  },
+  {
+    "name": "Git",
+    "category": "Tools",
+    "level": 85
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "id": "about",
+    "title": "About",
+    "icon": "\ud83d\udc64",
+    "order": 1,
+    "visible": true,
+    "contentType": "about"
+  },
+  {
+    "id": "skills",
+    "title": "Skills",
+    "icon": "\ud83d\udee0",
+    "order": 2,
+    "visible": true,
+    "contentType": "skills"
+  },
+  {
+    "id": "projects",
+    "title": "Projects",
+    "icon": "\ud83d\ude80",
+    "order": 3,
+    "visible": true,
+    "contentType": "projects"
+  },
+  {
+    "id": "experience",
+    "title": "Experience",
+    "icon": "\ud83d\udcbc",
+    "order": 5,
+    "visible": true,
+    "contentType": "experience"
+  },
+  {
+    "id": "contact",
+    "title": "Contact",
+    "icon": "\u2709\ufe0f",
+    "order": 6,
+    "visible": true,
+    "contentType": "contact"
+  },
+  {
+    "id": "certificates",
+    "title": "Certificates",
+    "icon": "\ud83c\udf93",
+    "order": 4,
+    "visible": true,
+    "contentType": "certificates"
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "name": "Rustam Ali",
+  "role": "Software Engineer",
+  "tagline": "I build fast, reliable web apps.",
+  "bio": "Hii I am Rustam",
+  "photo": "/uploads/1790631953384.jpg",
+  "resume": "/uploads/1790631978604.pdf",
+  "email": "you@example.com",
+  "github": "https://github.com/",
+  "linkedin": "https://linkedin.com/",
+  "learning": [
+    "System Design",
+    "TypeScript"
+  ]
+}
