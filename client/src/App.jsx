@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Routes, Route, NavLink, Navigate, useParams } from "react-router-dom";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  "https://portfolio-backend-nrgx.onrender.com";
 
 const api = (p, o = {}) =>
   fetch(`${API_BASE_URL}/api/${p}`, {
