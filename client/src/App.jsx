@@ -1,7 +1,23 @@
+
 import { useEffect, useState } from "react";
 import { Routes, Route, NavLink, Navigate, useParams } from "react-router-dom";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  "https://portfolio-backend-nrgx.onrender.com";
+
+// Converts backend upload paths into complete URLs.
+const fileUrl = (path) => {
+  if (!path) return "";
+
+  // If the path is already a complete URL, use it directly.
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+
+  // Attach the backend URL to relative upload paths.
+  return `${API_BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+};
 
 const api = (p, o = {}) =>
   fetch(`${API_BASE_URL}/api/${p}`, {
@@ -13,6 +29,7 @@ const api = (p, o = {}) =>
     if (!r.ok) throw new Error(j.error || "Request failed");
     return j;
   });
+
 const NAMES = [
   "profile",
   "menu",
@@ -21,35 +38,44 @@ const NAMES = [
   "experience",
   "certificates",
 ];
+
 const UP = ["photo", "resume", "image"];
 
 export default function App() {
   const [d, setD] = useState(null);
   const [dark, setDark] = useState(localStorage.theme !== "light");
+
   const load = () =>
     Promise.all(NAMES.map((n) => api(n))).then((r) =>
       setD(Object.fromEntries(NAMES.map((n, i) => [n, r[i]]))),
     );
+
   useEffect(() => {
     load();
   }, []);
+
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     localStorage.theme = dark ? "dark" : "light";
   }, [dark]);
+
   if (!d) return <div className="boot">Loading…</div>;
+
   const menu = d.menu
     .filter((m) => m.visible)
     .sort((a, b) => a.order - b.order);
+
   const p = d.profile;
+
   return (
     <div className="app">
       <aside className="side">
         <div className="who">
-          {p.photo && <img src={p.photo} alt={p.name} />}
+          {p.photo && <img src={fileUrl(p.photo)} alt={p.name} />}
           <h1>{p.name}</h1>
           <p>{p.role}</p>
         </div>
+
         <nav>
           {menu.map((m) => (
             <NavLink key={m.id} to={"/" + m.id} className="btn">
@@ -58,24 +84,30 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
+
         <div className="foot">
           {p.github && <a href={p.github}>GitHub</a>}
           {p.linkedin && <a href={p.linkedin}>LinkedIn</a>}
+
           <button className="tog" onClick={() => setDark(!dark)}>
             {dark ? "Light" : "Dark"} mode
           </button>
+
           <NavLink to="/admin" aria-label="Admin login">
             🔒
           </NavLink>
         </div>
       </aside>
+
       <div className="rule" />
+
       <main className="panel">
         <Routes>
           <Route
             path="/"
             element={<Navigate to={"/" + (menu[0]?.id || "about")} replace />}
           />
+
           <Route path="/admin" element={<Admin reload={load} />} />
           <Route path="/:id" element={<Panel d={d} menu={menu} />} />
         </Routes>
@@ -87,7 +119,9 @@ export default function App() {
 function Panel({ d, menu }) {
   const { id } = useParams();
   const item = menu.find((m) => m.id === id);
+
   if (!item) return <Navigate to="/" replace />;
+
   const T = {
     about: About,
     skills: Skills,
@@ -96,6 +130,7 @@ function Panel({ d, menu }) {
     certificates: Certs,
     contact: Contact,
   }[item.contentType];
+
   return (
     <section className="sec" key={id}>
       <h2>{item.title}</h2>
@@ -111,6 +146,7 @@ function About({ d: { profile: p } }) {
     <>
       <p className="sub">{p.tagline}</p>
       <p style={{ maxWidth: "62ch" }}>{p.bio}</p>
+
       {p.learning?.length > 0 && (
         <>
           <h3>Currently learning</h3>
@@ -121,12 +157,19 @@ function About({ d: { profile: p } }) {
           ))}
         </>
       )}
+
       <div style={{ marginTop: 24 }}>
         {p.resume && (
-          <a className="cta" href={p.resume}>
+          <a
+            className="cta"
+            href={fileUrl(p.resume)}
+            target="_blank"
+            rel="noreferrer"
+          >
             Download resume
           </a>
         )}
+
         <NavLink className="cta alt" to="/contact">
           Hire me
         </NavLink>
@@ -137,10 +180,13 @@ function About({ d: { profile: p } }) {
 
 function Skills({ d: { skills } }) {
   if (!skills.length) return <Empty t="No skills added yet." />;
+
   const cats = [...new Set(skills.map((s) => s.category || "Other"))];
+
   return cats.map((c) => (
     <div key={c} style={{ marginBottom: 28 }}>
       <h3>{c}</h3>
+
       <div className="grid">
         {skills
           .filter((s) => (s.category || "Other") === c)
@@ -150,6 +196,7 @@ function Skills({ d: { skills } }) {
               <span className="chip" style={{ float: "right" }}>
                 {s.level}%
               </span>
+
               <div
                 className="bar"
                 style={{ marginTop: 10 }}
@@ -168,9 +215,11 @@ function Skills({ d: { skills } }) {
 function Modal({ onClose, children }) {
   useEffect(() => {
     const h = (e) => e.key === "Escape" && onClose();
+
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, []);
+
   return (
     <div className="modal" onClick={onClose}>
       <div
@@ -182,6 +231,7 @@ function Modal({ onClose, children }) {
         <button className="cta alt" onClick={onClose}>
           Close
         </button>
+
         {children}
       </div>
     </div>
@@ -191,11 +241,13 @@ function Modal({ onClose, children }) {
 function Projects({ d: { projects } }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(null);
+
   const list = projects.filter((p) =>
     (p.title + p.description + (p.tech || []).join(" "))
       .toLowerCase()
       .includes(q.toLowerCase()),
   );
+
   const Links = ({ p }) => (
     <>
       {p.live && (
@@ -203,6 +255,7 @@ function Projects({ d: { projects } }) {
           Live
         </a>
       )}
+
       {p.github && (
         <a className="cta alt" href={p.github}>
           Code
@@ -210,6 +263,7 @@ function Projects({ d: { projects } }) {
       )}
     </>
   );
+
   return (
     <>
       <input
@@ -219,15 +273,24 @@ function Projects({ d: { projects } }) {
         aria-label="Search projects"
         style={{ maxWidth: 360 }}
       />
+
       {!list.length ? (
         <Empty t="No projects match your search." />
       ) : (
         <div className="grid">
           {list.map((p) => (
             <article className="card" key={p.title}>
-              {p.image && <img className="thumb" src={p.image} alt={p.title} />}
+              {p.image && (
+                <img
+                  className="thumb"
+                  src={fileUrl(p.image)}
+                  alt={p.title}
+                />
+              )}
+
               <h3 style={{ margin: 0 }}>{p.title}</h3>
               <p>{p.description}</p>
+
               <div>
                 {(p.tech || []).map((t) => (
                   <span className="chip" key={t}>
@@ -235,22 +298,31 @@ function Projects({ d: { projects } }) {
                   </span>
                 ))}
               </div>
+
               <button className="cta" onClick={() => setOpen(p)}>
                 Details
               </button>
+
               <Links p={p} />
             </article>
           ))}
         </div>
       )}
+
       {open && (
         <Modal onClose={() => setOpen(null)}>
           {open.image && (
-            <img className="thumb" src={open.image} alt={open.title} />
+            <img
+              className="thumb"
+              src={fileUrl(open.image)}
+              alt={open.title}
+            />
           )}
+
           <h3>{open.title}</h3>
           <p>{open.description}</p>
           <p style={{ whiteSpace: "pre-line" }}>{open.details}</p>
+
           <div>
             {(open.tech || []).map((t) => (
               <span className="chip" key={t}>
@@ -258,6 +330,7 @@ function Projects({ d: { projects } }) {
               </span>
             ))}
           </div>
+
           <Links p={open} />
         </Modal>
       )}
@@ -267,17 +340,30 @@ function Projects({ d: { projects } }) {
 
 function Certs({ d: { certificates } }) {
   const [open, setOpen] = useState(null);
-  if (!certificates.length) return <Empty t="No certificates added yet." />;
+
+  if (!certificates.length) {
+    return <Empty t="No certificates added yet." />;
+  }
+
   return (
     <>
       <div className="grid">
         {certificates.map((c) => (
           <article className="card" key={c.title}>
-            {c.image && <img className="thumb" src={c.image} alt={c.title} />}
+            {c.image && (
+              <img
+                className="thumb"
+                src={fileUrl(c.image)}
+                alt={c.title}
+              />
+            )}
+
             <b>{c.title}</b>
+
             <p style={{ margin: 0, color: "var(--muted)" }}>
               {c.issuer} {c.year && "· " + c.year}
             </p>
+
             {c.image && (
               <button
                 className="cta alt"
@@ -287,6 +373,7 @@ function Certs({ d: { certificates } }) {
                 Preview
               </button>
             )}
+
             {c.link && (
               <a className="cta" href={c.link}>
                 Verify
@@ -295,11 +382,12 @@ function Certs({ d: { certificates } }) {
           </article>
         ))}
       </div>
+
       {open && (
         <Modal onClose={() => setOpen(null)}>
           <img
             style={{ width: "100%", borderRadius: 12 }}
-            src={open.image}
+            src={fileUrl(open.image)}
             alt={open.title}
           />
         </Modal>
@@ -309,7 +397,10 @@ function Certs({ d: { certificates } }) {
 }
 
 function Experience({ d: { experience } }) {
-  if (!experience.length) return <Empty t="No experience added yet." />;
+  if (!experience.length) {
+    return <Empty t="No experience added yet." />;
+  }
+
   return (
     <div className="tl">
       {experience.map((e, i) => (
@@ -327,9 +418,11 @@ function Experience({ d: { experience } }) {
 function Contact({ d: { profile: p } }) {
   const [f, setF] = useState({ name: "", email: "", message: "" });
   const [s, setS] = useState("");
+
   const send = (e) => {
     e.preventDefault();
     setS("Sending…");
+
     api("contact", { method: "POST", body: JSON.stringify(f) })
       .then(() => {
         setS("Message sent. Thank you!");
@@ -337,9 +430,11 @@ function Contact({ d: { profile: p } }) {
       })
       .catch((x) => setS(x.message));
   };
+
   return (
     <>
       <p className="sub">Reach me at {p.email} or send a message below.</p>
+
       <form className="form" onSubmit={send}>
         <label>
           Name
@@ -349,6 +444,7 @@ function Contact({ d: { profile: p } }) {
             required
           />
         </label>
+
         <label>
           Email
           <input
@@ -358,6 +454,7 @@ function Contact({ d: { profile: p } }) {
             required
           />
         </label>
+
         <label>
           Message
           <textarea
@@ -367,6 +464,7 @@ function Contact({ d: { profile: p } }) {
             required
           />
         </label>
+
         <button className="cta">Send message</button>{" "}
         <span className="msg" role="status">
           {s}
@@ -377,6 +475,7 @@ function Contact({ d: { profile: p } }) {
 }
 
 /* ---------- Admin ---------- */
+
 const SCHEMA = {
   profile: {
     single: true,
@@ -393,10 +492,12 @@ const SCHEMA = {
       "learning",
     ],
   },
+
   skills: {
     fields: ["name", "category", "level"],
     blank: { name: "", category: "", level: 50 },
   },
+
   projects: {
     fields: [
       "title",
@@ -417,14 +518,17 @@ const SCHEMA = {
       github: "",
     },
   },
+
   certificates: {
     fields: ["title", "issuer", "year", "image", "link"],
     blank: { title: "", issuer: "", year: "", image: "", link: "" },
   },
+
   experience: {
     fields: ["role", "company", "period", "details"],
     blank: { role: "", company: "", period: "", details: "" },
   },
+
   menu: {
     fields: ["id", "title", "icon", "order", "visible", "contentType"],
     blank: {
@@ -440,12 +544,15 @@ const SCHEMA = {
 
 function Admin({ reload }) {
   const [ok, setOk] = useState(null);
+
   useEffect(() => {
     api("me")
       .then(() => setOk(true))
       .catch(() => setOk(false));
   }, []);
+
   if (ok === null) return null;
+
   return ok ? (
     <Dash
       reload={reload}
@@ -459,14 +566,17 @@ function Admin({ reload }) {
 function Login({ done }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
+
   return (
     <section className="sec">
       <h2>Admin</h2>
       <p className="sub">Enter your password to edit your portfolio.</p>
+
       <form
         className="form"
         onSubmit={(e) => {
           e.preventDefault();
+
           api("login", {
             method: "POST",
             body: JSON.stringify({ password: pw }),
@@ -484,6 +594,7 @@ function Login({ done }) {
             autoFocus
           />
         </label>
+
         <button className="cta">Log in</button>{" "}
         <span className="msg" role="alert">
           {err}
@@ -495,9 +606,11 @@ function Login({ done }) {
 
 function Dash({ reload, out }) {
   const [tab, setTab] = useState("profile");
+
   return (
     <section className="sec">
       <h2>Admin</h2>
+
       <div className="tabs">
         {[...Object.keys(SCHEMA), "messages"].map((t) => (
           <button
@@ -508,10 +621,12 @@ function Dash({ reload, out }) {
             {t}
           </button>
         ))}
+
         <button className="cta alt" onClick={out}>
           Log out
         </button>
       </div>
+
       {tab === "messages" ? (
         <Inbox />
       ) : (
@@ -526,11 +641,15 @@ function Editor({ name, reload }) {
   const [v, setV] = useState(null);
   const [msg, setMsg] = useState("");
   const [ver, setVer] = useState(0);
+
   useEffect(() => {
     api(name).then(setV);
   }, [name]);
+
   if (!v) return null;
+
   const rows = S.single ? [v] : v;
+
   const conv = (o, s) =>
     Array.isArray(o)
       ? s
@@ -542,12 +661,14 @@ function Editor({ name, reload }) {
         : typeof o === "boolean"
           ? s === "true"
           : s;
+
   const set = (i, k, s) =>
     setV(
       S.single
         ? { ...v, [k]: conv(v[k], s) }
         : v.map((r, j) => (j === i ? { ...r, [k]: conv(r[k], s) } : r)),
     );
+
   const save = () =>
     api(name, { method: "PUT", body: JSON.stringify(v) })
       .then(() => {
@@ -555,10 +676,13 @@ function Editor({ name, reload }) {
         reload();
       })
       .catch((e) => setMsg(e.message));
+
   const up = (f, i, k) => {
     if (!f) return;
+
     const fd = new FormData();
     fd.append("file", f);
+
     fetch(`${API_BASE_URL}/api/upload`, {
       method: "POST",
       credentials: "include",
@@ -566,27 +690,36 @@ function Editor({ name, reload }) {
     })
       .then(async (r) => {
         const j = await r.json();
+
         if (!r.ok) throw new Error(j.error);
+
         set(i, k, j.url);
         setVer((x) => x + 1);
         setMsg("Uploaded. Click Save changes.");
       })
       .catch((e) => setMsg(e.message));
   };
+
   return (
     <>
       {rows.map((r, i) => (
-        <div className="card" key={ver + "-" + i} style={{ marginBottom: 14 }}>
+        <div
+          className="card"
+          key={ver + "-" + i}
+          style={{ marginBottom: 14 }}
+        >
           <div className="row">
             {S.fields.map((k) => (
               <label key={k}>
                 {k}
+
                 <input
                   defaultValue={
                     Array.isArray(r[k]) ? r[k].join(", ") : String(r[k] ?? "")
                   }
                   onBlur={(e) => set(i, k, e.target.value)}
                 />
+
                 {UP.includes(k) && (
                   <input
                     type="file"
@@ -597,6 +730,7 @@ function Editor({ name, reload }) {
               </label>
             ))}
           </div>
+
           {!S.single && (
             <button
               className="cta alt"
@@ -612,6 +746,7 @@ function Editor({ name, reload }) {
           )}
         </div>
       ))}
+
       {!S.single && (
         <button
           className="cta alt"
@@ -623,9 +758,11 @@ function Editor({ name, reload }) {
           Add new
         </button>
       )}
+
       <button className="cta" onClick={save}>
         Save changes
       </button>{" "}
+
       <span className="msg" role="status">
         {msg}
       </span>
@@ -635,16 +772,21 @@ function Editor({ name, reload }) {
 
 function Inbox() {
   const [m, setM] = useState(null);
+
   useEffect(() => {
     api("messages").then(setM);
   }, []);
+
   if (!m) return null;
   if (!m.length) return <Empty t="No messages yet." />;
+
   return m.map((x) => (
     <div className="card" key={x.id} style={{ marginBottom: 14 }}>
-      <b>{x.name}</b> ({x.email})<br />
+      <b>{x.name}</b> ({x.email})
+      <br />
       <small>{new Date(x.date).toLocaleString()}</small>
       <p>{x.message}</p>
+
       <button
         className="cta alt"
         onClick={() =>
