@@ -10,7 +10,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data');
-const { ADMIN_PASSWORD_HASH, JWT_SECRET = 'change-me', PORT = 4000, CLIENT_URL = 'http://localhost:5173' } = process.env;
+const { ADMIN_PASSWORD_HASH, JWT_SECRET = 'change-me', CLIENT_URL = 'http://localhost:5173' } = process.env;
 const PUBLIC = ['profile', 'menu', 'skills', 'projects', 'experience', 'certificates'];
 
 // JSON storage: atomic write (temp file -> rename) so data never gets corrupted
@@ -51,7 +51,7 @@ app.get('/api/me', auth, (_, res) => res.json({ admin: true }));
 // Contact form (public) + inbox (admin)
 app.post('/api/contact', async (req, res) => {
   const { name, email, message } = req.body;
-  if (!name || !/^\S+@\S+\.\S+$/.test(email || '') || !message) return res.status(400).json({ error: 'Enter your name, a valid email and a message.' });
+  if (!name || !/^\S+@\S+\.\S+$/.test(email || "") || !message) return res.status(400).json({ error: 'Enter your name, a valid email and a message.' });
   const list = await read('messages');
   list.unshift({ id: Date.now().toString(), name: String(name).slice(0, 100), email, message: String(message).slice(0, 2000), date: new Date().toISOString() });
   await write('messages', list);
@@ -87,4 +87,9 @@ app.use((e, _req, res, _next) => {
   if (e.code === 'LIMIT_FILE_SIZE' || e.message?.startsWith('Only')) return res.status(400).json({ error: e.code === 'LIMIT_FILE_SIZE' ? 'File is larger than 5 MB.' : e.message });
   console.error(e); res.status(500).json({ error: 'Server error' });
 });
-app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
+
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
+});
