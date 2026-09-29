@@ -22,7 +22,20 @@ const write = async (n, d) => {
 };
 
 const app = express();
-app.use(cors({ origin: CLIENT_URL, credentials: true }), express.json({ limit: '1mb' }), cookieParser());
+const cors = require("cors");
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://portfolio-frontend-qpp0.onrender.com",
+];
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
 // Password is checked only on the server. 5 wrong tries = 15 minute lock.
 const tries = new Map();
