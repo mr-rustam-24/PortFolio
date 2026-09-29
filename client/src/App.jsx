@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { Routes, Route, NavLink, Navigate, useParams } from "react-router-dom";
 
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const API_URL = (
+  import.meta.env.VITE_API_URL || "http://localhost:5000"
+).replace(/\/+$/, "");
 
 function api(path, options = {}) {
-  return fetch(`${API_URL}/api/${path}`, {
+  const cleanPath = String(path).replace(/^\/+/, "");
+
+  return fetch(`${API_URL}/api/${cleanPath}`, {
     ...options,
     credentials: "include",
     headers: {
@@ -15,15 +18,30 @@ function api(path, options = {}) {
       ...options.headers,
     },
   }).then(async (response) => {
-    const data = await response.json();
+    const text = await response.text();
+    let data = {};
+
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`Server ne invalid response diya (${response.status})`);
+    }
 
     if (!response.ok) {
-      throw new Error(data.error || "Something went wrong");
+      throw new Error(data.error || `Request failed (${response.status})`);
     }
 
     return data;
   });
 }
+
+function assetUrl(path) {
+  if (!path) return "";
+  const value = String(path);
+  if (/^(https?:|data:|blob:)/i.test(value)) return value;
+  return `${API_URL}/${value.replace(/^\/+/, "")}`;
+}
+
 const NAMES = [
   "profile",
   "menu",
@@ -32,46 +50,87 @@ const NAMES = [
   "experience",
   "certificates",
 ];
+
 const UP = ["photo", "resume", "image"];
 
 export default function App() {
   const [d, setD] = useState(null);
-  const [dark, setDark] = useState(localStorage.theme !== "light");
+  const [loadError, setLoadError] = useState("");
+  const [dark, setDark] = useState(localStorage.getItem("theme") !== "light");
+
   const load = () =>
-    Promise.all(NAMES.map((n) => api(n))).then((r) =>
-      setD(Object.fromEntries(NAMES.map((n, i) => [n, r[i]]))),
-    );
+    Promise.all(NAMES.map((name) => api(name)))
+      .then((results) => {
+        setD(
+          Object.fromEntries(NAMES.map((name, i) => [name, results[i]])),
+        );
+        setLoadError("");
+      })
+      .catch((error) => {
+        setLoadError(error.message || "Portfolio data load nahi ho saka.");
+      });
+
   useEffect(() => {
     load();
   }, []);
+
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
-    localStorage.theme = dark ? "dark" : "light";
+    localStorage.setItem("theme", dark ? "dark" : "light");
   }, [dark]);
-  if (!d) return <div className="boot">Loading…</div>;
+
+  if (!d) {
+    return (
+      <div className="boot">
+        {loadError ? (
+          <>
+            <p>{loadError}</p>
+            <button className="cta" onClick={load}>
+              Retry
+            </button>
+          </>
+        ) : (
+          "Loading…"
+        )}
+      </div>
+    );
+  }
+
   const menu = d.menu
-    .filter((m) => m.visible)
+    .filter((item) => item.visible)
     .sort((a, b) => a.order - b.order);
+
   const p = d.profile;
+
   return (
     <div className="app">
       <aside className="side">
         <div className="who">
-          {p.photo && <img src={p.photo} alt={p.name} />}
+          {p.photo && <img src={assetUrl(p.photo)} alt={p.name} />}
           <h1>{p.name}</h1>
           <p>{p.role}</p>
         </div>
+
         <nav>
-          {menu.map((m) => (
-            <NavLink key={m.id} to={"/" + m.id} className="btn">
-              <span>{m.icon}</span>
-              {m.title}
+          {menu.map((item) => (
+            <NavLink key={item.id} to={"/" + item.id} className="btn">
+              <span>{item.icon}</span>
+              {item.title}
             </NavLink>
           ))}
         </nav>
+
         <div className="foot">
-          {p.github && <a href={p.github}>GitHub</a>}
-          {p.linkedin && <a href={p.linkedin}>LinkedIn</a>}
+          {p.github && (
+            <a href={p.github} target="_blank" rel="noreferrer">
+              GitHub
+            </a>
+          )}
+          {p.linkedin && (
+            <a href={p.linkedin} target="_blank" rel="noreferrer">
+              LinkedIn
+            </a>
+          )}
           <button className="tog" onClick={() => setDark(!dark)}>
             {dark ? "Light" : "Dark"} mode
           </button>
@@ -80,7 +139,9 @@ export default function App() {
           </NavLink>
         </div>
       </aside>
+
       <div className="rule" />
+
       <main className="panel">
         <Routes>
           <Route
@@ -99,6 +160,7 @@ function Panel({ d, menu }) {
   const { id } = useParams();
   const item = menu.find((m) => m.id === id);
   if (!item) return <Navigate to="/" replace />;
+
   const T = {
     about: About,
     skills: Skills,
@@ -107,6 +169,7 @@ function Panel({ d, menu }) {
     certificates: Certs,
     contact: Contact,
   }[item.contentType];
+
   return (
     <section className="sec" key={id}>
       <h2>{item.title}</h2>
@@ -115,13 +178,14 @@ function Panel({ d, menu }) {
   );
 }
 
-const Empty = ({ t }) => <p className="sub">{t}</p>;
+const Empty = ({ t = "Nothing here yet." }) => <p className="sub">{t}</p>;
 
 function About({ d: { profile: p } }) {
   return (
     <>
       <p className="sub">{p.tagline}</p>
       <p style={{ maxWidth: "62ch" }}>{p.bio}</p>
+
       {p.learning?.length > 0 && (
         <>
           <h3>Currently learning</h3>
@@ -132,9 +196,10 @@ function About({ d: { profile: p } }) {
           ))}
         </>
       )}
+
       <div style={{ marginTop: 24 }}>
         {p.resume && (
-          <a className="cta" href={p.resume}>
+          <a className="cta" href={assetUrl(p.resume)} download>
             Download resume
           </a>
         )}
@@ -148,7 +213,9 @@ function About({ d: { profile: p } }) {
 
 function Skills({ d: { skills } }) {
   if (!skills.length) return <Empty t="No skills added yet." />;
+
   const cats = [...new Set(skills.map((s) => s.category || "Other"))];
+
   return cats.map((c) => (
     <div key={c} style={{ marginBottom: 28 }}>
       <h3>{c}</h3>
@@ -166,6 +233,8 @@ function Skills({ d: { skills } }) {
                 style={{ marginTop: 10 }}
                 role="progressbar"
                 aria-valuenow={s.level}
+                aria-valuemin={0}
+                aria-valuemax={100}
               >
                 <i style={{ width: s.level + "%" }} />
               </div>
@@ -181,7 +250,8 @@ function Modal({ onClose, children }) {
     const h = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, []);
+  }, [onClose]);
+
   return (
     <div className="modal" onClick={onClose}>
       <div
@@ -199,28 +269,31 @@ function Modal({ onClose, children }) {
   );
 }
 
-function Projects({ d: { projects } }) {
+function Projects({ d: { projects = [] } }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(null);
+
   const list = projects.filter((p) =>
-    (p.title + p.description + (p.tech || []).join(" "))
+    (p.title + " " + p.description + " " + (p.tech || []).join(" "))
       .toLowerCase()
       .includes(q.toLowerCase()),
   );
+
   const Links = ({ p }) => (
     <>
       {p.live && (
-        <a className="cta" href={p.live}>
+        <a className="cta" href={p.live} target="_blank" rel="noreferrer">
           Live
         </a>
       )}
       {p.github && (
-        <a className="cta alt" href={p.github}>
+        <a className="cta alt" href={p.github} target="_blank" rel="noreferrer">
           Code
         </a>
       )}
     </>
   );
+
   return (
     <>
       <input
@@ -230,13 +303,21 @@ function Projects({ d: { projects } }) {
         aria-label="Search projects"
         style={{ maxWidth: 360 }}
       />
+
       {!list.length ? (
         <Empty t="No projects match your search." />
       ) : (
         <div className="grid">
           {list.map((p) => (
             <article className="card" key={p.title}>
-              {p.image && <img className="thumb" src={p.image} alt={p.title} />}
+              {p.image && (
+                <img
+                  className="thumb"
+                  src={assetUrl(p.image)}
+                  alt={p.title}
+                  loading="lazy"
+                />
+              )}
               <h3 style={{ margin: 0 }}>{p.title}</h3>
               <p>{p.description}</p>
               <div>
@@ -254,10 +335,11 @@ function Projects({ d: { projects } }) {
           ))}
         </div>
       )}
+
       {open && (
         <Modal onClose={() => setOpen(null)}>
           {open.image && (
-            <img className="thumb" src={open.image} alt={open.title} />
+            <img className="thumb" src={assetUrl(open.image)} alt={open.title} />
           )}
           <h3>{open.title}</h3>
           <p>{open.description}</p>
@@ -276,15 +358,24 @@ function Projects({ d: { projects } }) {
   );
 }
 
-function Certs({ d: { certificates } }) {
+function Certs({ d: { certificates = [] } }) {
   const [open, setOpen] = useState(null);
+
   if (!certificates.length) return <Empty t="No certificates added yet." />;
+
   return (
     <>
       <div className="grid">
         {certificates.map((c) => (
           <article className="card" key={c.title}>
-            {c.image && <img className="thumb" src={c.image} alt={c.title} />}
+            {c.image && (
+              <img
+                className="thumb"
+                src={assetUrl(c.image)}
+                alt={c.title}
+                loading="lazy"
+              />
+            )}
             <b>{c.title}</b>
             <p style={{ margin: 0, color: "var(--muted)" }}>
               {c.issuer} {c.year && "· " + c.year}
@@ -299,18 +390,19 @@ function Certs({ d: { certificates } }) {
               </button>
             )}
             {c.link && (
-              <a className="cta" href={c.link}>
+              <a className="cta" href={c.link} target="_blank" rel="noreferrer">
                 Verify
               </a>
             )}
           </article>
         ))}
       </div>
+
       {open && (
         <Modal onClose={() => setOpen(null)}>
           <img
             style={{ width: "100%", borderRadius: 12 }}
-            src={open.image}
+            src={assetUrl(open.image)}
             alt={open.title}
           />
         </Modal>
@@ -319,8 +411,9 @@ function Certs({ d: { certificates } }) {
   );
 }
 
-function Experience({ d: { experience } }) {
+function Experience({ d: { experience = [] } }) {
   if (!experience.length) return <Empty t="No experience added yet." />;
+
   return (
     <div className="tl">
       {experience.map((e, i) => (
@@ -335,22 +428,34 @@ function Experience({ d: { experience } }) {
   );
 }
 
-function Contact({ d: { profile: p } }) {
+function Contact({ d: { profile: p = {} } }) {
   const [f, setF] = useState({ name: "", email: "", message: "" });
   const [s, setS] = useState("");
+  const [sending, setSending] = useState(false);
+
   const send = (e) => {
     e.preventDefault();
+    if (sending) return;
+    setSending(true);
     setS("Sending…");
+
     api("contact", { method: "POST", body: JSON.stringify(f) })
       .then(() => {
         setS("Message sent. Thank you!");
         setF({ name: "", email: "", message: "" });
       })
-      .catch((x) => setS(x.message));
+      .catch((x) => setS(x.message || "Unable to send message."))
+      .finally(() => setSending(false));
   };
+
   return (
     <>
-      <p className="sub">Reach me at {p.email} or send a message below.</p>
+      <p className="sub">
+        Reach me at{" "}
+        {p.email ? <a href={`mailto:${p.email}`}>{p.email}</a> : "my email"} or
+        send a message below.
+      </p>
+
       <form className="form" onSubmit={send}>
         <label>
           Name
@@ -378,7 +483,9 @@ function Contact({ d: { profile: p } }) {
             required
           />
         </label>
-        <button className="cta">Send message</button>{" "}
+        <button className="cta" disabled={sending}>
+          {sending ? "Sending…" : "Send message"}
+        </button>{" "}
         <span className="msg" role="status">
           {s}
         </span>
@@ -409,15 +516,7 @@ const SCHEMA = {
     blank: { name: "", category: "", level: 50 },
   },
   projects: {
-    fields: [
-      "title",
-      "description",
-      "details",
-      "image",
-      "tech",
-      "live",
-      "github",
-    ],
+    fields: ["title", "description", "details", "image", "tech", "live", "github"],
     blank: {
       title: "",
       description: "",
@@ -451,12 +550,15 @@ const SCHEMA = {
 
 function Admin({ reload }) {
   const [ok, setOk] = useState(null);
+
   useEffect(() => {
     api("me")
       .then(() => setOk(true))
       .catch(() => setOk(false));
   }, []);
+
   if (ok === null) return null;
+
   return ok ? (
     <Dash
       reload={reload}
@@ -470,6 +572,7 @@ function Admin({ reload }) {
 function Login({ done }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
+
   return (
     <section className="sec">
       <h2>Admin</h2>
@@ -478,6 +581,7 @@ function Login({ done }) {
         className="form"
         onSubmit={(e) => {
           e.preventDefault();
+          setErr("");
           api("login", {
             method: "POST",
             body: JSON.stringify({ password: pw }),
@@ -506,6 +610,7 @@ function Login({ done }) {
 
 function Dash({ reload, out }) {
   const [tab, setTab] = useState("profile");
+
   return (
     <section className="sec">
       <h2>Admin</h2>
@@ -523,6 +628,7 @@ function Dash({ reload, out }) {
           Log out
         </button>
       </div>
+
       {tab === "messages" ? (
         <Inbox />
       ) : (
@@ -537,11 +643,17 @@ function Editor({ name, reload }) {
   const [v, setV] = useState(null);
   const [msg, setMsg] = useState("");
   const [ver, setVer] = useState(0);
+
   useEffect(() => {
-    api(name).then(setV);
+    api(name)
+      .then(setV)
+      .catch((e) => setMsg(e.message));
   }, [name]);
-  if (!v) return null;
+
+  if (!v) return msg ? <p className="msg">{msg}</p> : null;
+
   const rows = S.single ? [v] : v;
+
   const conv = (o, s) =>
     Array.isArray(o)
       ? s
@@ -553,12 +665,14 @@ function Editor({ name, reload }) {
         : typeof o === "boolean"
           ? s === "true"
           : s;
+
   const set = (i, k, s) =>
     setV(
       S.single
         ? { ...v, [k]: conv(v[k], s) }
         : v.map((r, j) => (j === i ? { ...r, [k]: conv(r[k], s) } : r)),
     );
+
   const save = () =>
     api(name, { method: "PUT", body: JSON.stringify(v) })
       .then(() => {
@@ -566,24 +680,21 @@ function Editor({ name, reload }) {
         reload();
       })
       .catch((e) => setMsg(e.message));
+
   const up = (f, i, k) => {
     if (!f) return;
     const fd = new FormData();
     fd.append("file", f);
-    fetch(`${API_URL}/api/upload`, {
-  method: "POST",
-  credentials: "include",
-  body: fd,
-})
-      .then(async (r) => {
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.error);
+
+    api("upload", { method: "POST", body: fd })
+      .then((j) => {
         set(i, k, j.url);
         setVer((x) => x + 1);
         setMsg("Uploaded. Click Save changes.");
       })
       .catch((e) => setMsg(e.message));
   };
+
   return (
     <>
       {rows.map((r, i) => (
@@ -608,11 +719,12 @@ function Editor({ name, reload }) {
               </label>
             ))}
           </div>
+
           {!S.single && (
             <button
               className="cta alt"
               onClick={() => {
-                if (confirm("Delete this item?")) {
+                if (window.confirm("Delete this item?")) {
                   setV(v.filter((_, j) => j !== i));
                   setVer(ver + 1);
                 }
@@ -623,6 +735,7 @@ function Editor({ name, reload }) {
           )}
         </div>
       ))}
+
       {!S.single && (
         <button
           className="cta alt"
@@ -634,6 +747,7 @@ function Editor({ name, reload }) {
           Add new
         </button>
       )}
+
       <button className="cta" onClick={save}>
         Save changes
       </button>{" "}
@@ -646,11 +760,18 @@ function Editor({ name, reload }) {
 
 function Inbox() {
   const [m, setM] = useState(null);
+  const [err, setErr] = useState("");
+
   useEffect(() => {
-    api("messages").then(setM);
+    api("messages")
+      .then(setM)
+      .catch((e) => setErr(e.message));
   }, []);
+
+  if (err) return <p className="msg">{err}</p>;
   if (!m) return null;
   if (!m.length) return <Empty t="No messages yet." />;
+
   return m.map((x) => (
     <div className="card" key={x.id} style={{ marginBottom: 14 }}>
       <b>{x.name}</b> ({x.email})<br />
@@ -659,9 +780,9 @@ function Inbox() {
       <button
         className="cta alt"
         onClick={() =>
-          api("messages/" + x.id, { method: "DELETE" }).then(() =>
-            setM(m.filter((y) => y.id !== x.id)),
-          )
+          api("messages/" + x.id, { method: "DELETE" })
+            .then(() => setM(m.filter((y) => y.id !== x.id)))
+            .catch((e) => setErr(e.message))
         }
       >
         Delete
