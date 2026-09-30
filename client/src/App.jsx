@@ -7,6 +7,7 @@ const API_URL = (
 
 function api(path, options = {}) {
   const cleanPath = String(path).replace(/^\/+/, "");
+  const token = localStorage.getItem("token");
 
   return fetch(`${API_URL}/api/${cleanPath}`, {
     ...options,
@@ -15,6 +16,7 @@ function api(path, options = {}) {
       ...(options.body instanceof FormData
         ? {}
         : { "Content-Type": "application/json" }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
   }).then(async (response) => {
@@ -562,7 +564,12 @@ function Admin({ reload }) {
   return ok ? (
     <Dash
       reload={reload}
-      out={() => api("logout", { method: "POST" }).then(() => setOk(false))}
+     out={() =>
+  api("logout", { method: "POST" }).finally(() => {
+    localStorage.removeItem("token");
+    setOk(false);
+  })
+}
     />
   ) : (
     <Login done={() => setOk(true)} />
@@ -586,8 +593,10 @@ function Login({ done }) {
             method: "POST",
             body: JSON.stringify({ password: pw }),
           })
-            .then(done)
-            .catch((x) => setErr(x.message));
+            .then((r) => {
+  if (r.token) localStorage.setItem("token", r.token);
+  done();
+})
         }}
       >
         <label>
@@ -704,11 +713,11 @@ function Editor({ name, reload }) {
               <label key={k}>
                 {k}
                 <input
-                  defaultValue={
-                    Array.isArray(r[k]) ? r[k].join(", ") : String(r[k] ?? "")
-                  }
-                  onBlur={(e) => set(i, k, e.target.value)}
-                />
+  defaultValue={
+    Array.isArray(r[k]) ? r[k].join(", ") : String(r[k] ?? "")
+  }
+  onChange={(e) => set(i, k, e.target.value)}
+/>
                 {UP.includes(k) && (
                   <input
                     type="file"

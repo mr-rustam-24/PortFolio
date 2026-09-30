@@ -6,6 +6,8 @@ import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import multer from "multer";
+import mongoose from "mongoose";
+import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -19,21 +21,34 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Render proxy ke peeche sahi client IP milne ke liye
+app.set("trust proxy", 1);
+
 const PORT = process.env.PORT || 5000;
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH;
+const MONGODB_URI = process.env.MONGODB_URI;
 
-// Local frontend URL aur deployed Render frontend URL
+if (!JWT_SECRET) {
+  console.error("JWT_SECRET is missing from environment variables.");
+  process.exit(1);
+}
+
+if (!MONGODB_URI) {
+  console.error("MONGODB_URI is missing from environment variables.");
+  process.exit(1);
+}
+
+const stripSlash = (url) => String(url).replace(/\/+$/, "");
+
 const allowedOrigins = [
   "http://localhost:5173",
   "https://portfolio-frontend-qpp0.onrender.com",
 ];
 
-// Agar Render environment mein CLIENT_URL set kiya hai,
-// toh us URL ko bhi allow kar do.
 if (process.env.CLIENT_URL) {
-  allowedOrigins.push(process.env.CLIENT_URL);
+  allowedOrigins.push(stripSlash(process.env.CLIENT_URL));
 }
 
 // ------------------------------------
@@ -53,14 +68,8 @@ app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 // ------------------------------------
-// Data paths
+// MongoDB models
 // ------------------------------------
-
-const dataDir = path.join(__dirname, "data");
-const uploadsDir = path.join(__dirname, "uploads");
-
-await fs.mkdir(dataDir, { recursive: true });
-await fs.mkdir(uploadsDir, { recursive: true });
 
 const PUBLIC_SECTIONS = [
   "profile",
@@ -71,23 +80,130 @@ const PUBLIC_SECTIONS = [
   "certificates",
 ];
 
+// Har section (profile, menu, skills...) ek document me save hota hai
+const Section = mongoose.model(
+  "Section",
+  new mongoose.Schema(
+    {
+      name: { type: String, required: true, unique: true },
+      data: mongoose.Schema.Types.Mixed,
+    },
+    { minimize: false }
+  )
+);
+
+const Message = mongoose.model(
+  "Message",
+  new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    name: String,
+    email: String,
+    message: String,
+    date: String,
+  })
+);
+
+// Uploaded photos / resume / certificate images MongoDB me store hote hain
+const Upload = mongoose.model(
+  "Upload",
+  new mongoose.Schema({
+    filename: { type: String, required: true, unique: true },
+    contentType: String,
+    data: Buffer,
+  })
+);
+
 // ------------------------------------
-// JSON file helpers
+// Data helpers
 // ------------------------------------
 
 async function readData(name) {
-  const filePath = path.join(dataDir, `${name}.json`);
-  const content = await fs.readFile(filePath, "utf8");
+  const doc = await Section.findOne({ name }).lean();
 
-  return JSON.parse(content);
+  if (doc) return doc.data;
+
+  return name === "profile" ? {} : [];
 }
 
 async function writeData(name, data) {
-  const filePath = path.join(dataDir, `${name}.json`);
-  const tempPath = `${filePath}.tmp`;
+  await Section.findOneAndUpdate(
+    { name },
+    { $set: { data } },
+    { upsert: true }
+  );
+}
 
-  await fs.writeFile(tempPath, JSON.stringify(data, null, 2), "utf8");
-  await fs.rename(tempPath, filePath);
+// ------------------------------------
+// First-time seed (purani data/*.json aur uploads/ se)
+// ------------------------------------
+
+const dataDir = path.join(__dirname, "data");
+const uploadsDir = path.join(__dirname, "uploads");
+
+const MIME_BY_EXT = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".pdf": "application/pdf",
+};
+
+async function readJsonFile(name) {
+  try {
+    const content = await fs.readFile(path.join(dataDir, `${name}.json`), "utf8");
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+}
+
+async function seedDatabase() {
+  for (const name of PUBLIC_SECTIONS) {
+    const exists = await Section.exists({ name });
+
+    if (!exists) {
+      const fileData = await readJsonFile(name);
+      const fallback = name === "profile" ? {} : [];
+
+      await Section.create({ name, data: fileData ?? fallback });
+      console.log(`Seeded section: ${name}`);
+    }
+  }
+
+  if ((await Message.countDocuments()) === 0) {
+    const oldMessages = await readJsonFile("messages");
+
+    if (Array.isArray(oldMessages) && oldMessages.length) {
+      await Message.insertMany(
+        oldMessages.map((m) => ({
+          id: String(m.id),
+          name: m.name,
+          email: m.email,
+          message: m.message,
+          date: m.date,
+        }))
+      );
+      console.log("Seeded messages");
+    }
+  }
+
+  try {
+    const files = await fs.readdir(uploadsDir);
+
+    for (const filename of files) {
+      const ext = path.extname(filename).toLowerCase();
+      const contentType = MIME_BY_EXT[ext];
+
+      if (!contentType) continue;
+      if (await Upload.exists({ filename })) continue;
+
+      const data = await fs.readFile(path.join(uploadsDir, filename));
+      await Upload.create({ filename, contentType, data });
+      console.log(`Seeded upload: ${filename}`);
+    }
+  } catch {
+    // uploads folder na ho to koi problem nahi
+  }
 }
 
 // ------------------------------------
@@ -102,11 +218,16 @@ function asyncHandler(fn) {
 
 // ------------------------------------
 // Authentication middleware
+// (Bearer token pehle, cookie backup)
 // ------------------------------------
 
 function auth(req, res, next) {
   try {
-    const token = req.cookies?.token;
+    const header = req.headers.authorization || "";
+
+    const token = header.startsWith("Bearer ")
+      ? header.slice(7)
+      : req.cookies?.token;
 
     if (!token) {
       return res.status(401).json({ error: "Please log in." });
@@ -173,11 +294,9 @@ app.post(
 
     loginAttempts.delete(ip);
 
-    const token = jwt.sign(
-      { admin: true },
-      JWT_SECRET,
-      { expiresIn: "2h" }
-    );
+    const token = jwt.sign({ admin: true }, JWT_SECRET, {
+      expiresIn: "2h",
+    });
 
     const isProduction = process.env.NODE_ENV === "production";
 
@@ -189,7 +308,8 @@ app.post(
       path: "/",
     });
 
-    return res.json({ ok: true });
+    // token response me bhi bhej rahe hain (mobile ke liye)
+    return res.json({ ok: true, token });
   })
 );
 
@@ -235,17 +355,13 @@ app.post(
       });
     }
 
-    const messages = await readData("messages");
-
-    messages.unshift({
-      id: Date.now().toString(),
+    await Message.create({
+      id: `${Date.now()}${crypto.randomBytes(2).toString("hex")}`,
       name: String(name).slice(0, 100),
       email: String(email).slice(0, 200),
       message: String(message).slice(0, 2000),
       date: new Date().toISOString(),
     });
-
-    await writeData("messages", messages);
 
     res.json({ ok: true });
   })
@@ -259,7 +375,11 @@ app.get(
   "/api/messages",
   auth,
   asyncHandler(async (req, res) => {
-    const messages = await readData("messages");
+    const messages = await Message.find()
+      .sort({ date: -1 })
+      .select("-_id -__v")
+      .lean();
+
     res.json(messages);
   })
 );
@@ -272,20 +392,14 @@ app.delete(
   "/api/messages/:id",
   auth,
   asyncHandler(async (req, res) => {
-    const messages = await readData("messages");
-
-    const updatedMessages = messages.filter(
-      (message) => message.id !== req.params.id
-    );
-
-    await writeData("messages", updatedMessages);
+    await Message.deleteOne({ id: req.params.id });
 
     res.json({ ok: true });
   })
 );
 
 // ------------------------------------
-// File upload configuration
+// File upload (MongoDB me store)
 // ------------------------------------
 
 const allowedMimeTypes = [
@@ -295,21 +409,8 @@ const allowedMimeTypes = [
   "application/pdf",
 ];
 
-const storage = multer.diskStorage({
-  destination: (req, file, callback) => {
-    callback(null, uploadsDir);
-  },
-
-  filename: (req, file, callback) => {
-    const extension = path.extname(file.originalname).toLowerCase();
-    const filename = `${Date.now()}${extension}`;
-
-    callback(null, filename);
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024,
   },
@@ -319,36 +420,62 @@ const upload = multer({
       return callback(null, true);
     }
 
-    callback(
-      new Error("Only PNG, JPG, WEBP or PDF files are allowed.")
-    );
+    callback(new Error("Only PNG, JPG, WEBP or PDF files are allowed."));
   },
 });
 
-// Serve uploaded files
-app.use("/uploads", express.static(uploadsDir));
+// Uploaded file ko database se serve karo
+app.get(
+  "/uploads/:filename",
+  asyncHandler(async (req, res) => {
+    const file = await Upload.findOne({ filename: req.params.filename });
+
+    if (!file) {
+      return res.status(404).json({ error: "File not found." });
+    }
+
+    res.set({
+      "Content-Type": file.contentType || "application/octet-stream",
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "Cross-Origin-Resource-Policy": "cross-origin",
+    });
+
+    res.send(file.data);
+  })
+);
 
 // Admin-only upload route
 app.post(
   "/api/upload",
   auth,
   upload.single("file"),
-  (req, res) => {
+  asyncHandler(async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "Please select a file." });
     }
 
-    res.json({
-      url: `/uploads/${req.file.filename}`,
+    let extension = path.extname(req.file.originalname).toLowerCase();
+
+    if (!/^\.[a-z0-9]{1,5}$/.test(extension)) extension = "";
+
+    const filename = `${Date.now()}-${crypto
+      .randomBytes(3)
+      .toString("hex")}${extension}`;
+
+    await Upload.create({
+      filename,
+      contentType: req.file.mimetype,
+      data: req.file.buffer,
     });
-  }
+
+    res.json({ url: `/uploads/${filename}` });
+  })
 );
 
 // ------------------------------------
 // Public content APIs
 // ------------------------------------
 
-// Anyone can read public portfolio sections
 app.get(
   "/api/:section",
   asyncHandler(async (req, res) => {
@@ -364,7 +491,6 @@ app.get(
   })
 );
 
-// Only admin can update public portfolio sections
 app.put(
   "/api/:section",
   auth,
@@ -375,7 +501,18 @@ app.put(
       return res.status(404).json({ error: "Not found." });
     }
 
-    await writeData(section, req.body);
+    const isProfile = section === "profile";
+    const body = req.body;
+
+    const validShape = isProfile
+      ? body && typeof body === "object" && !Array.isArray(body)
+      : Array.isArray(body);
+
+    if (!validShape) {
+      return res.status(400).json({ error: "Invalid data format." });
+    }
+
+    await writeData(section, body);
 
     res.json({ ok: true });
   })
@@ -409,8 +546,13 @@ app.use((error, req, res, next) => {
 // Start server
 // ------------------------------------
 
-if (!JWT_SECRET) {
-  console.error("JWT_SECRET is missing from environment variables.");
+try {
+  await mongoose.connect(MONGODB_URI);
+  console.log("MongoDB connected");
+
+  await seedDatabase();
+} catch (error) {
+  console.error("MongoDB connection failed:", error.message);
   process.exit(1);
 }
 
